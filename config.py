@@ -1,11 +1,11 @@
 # config.py
 
 # --- CREDENCIALES DE LA API DE TUYA (YA PROVISTAS) ---
-ACCESS_ID = "qntmehujgajfud454awm"
-ACCESS_SECRET = "bb99b5d3763843ec89e4ebdfbba8472a"
+ACCESS_ID = "TU_ACCESS_ID"
+ACCESS_SECRET = "TU_ACCESS_SECRET"
 
 # --- DATOS PENDIENTES (OBLIGATORIO REEMPLAZAR) ---
-DEVICE_ID = "eb13f3a9ea0c158ce3v2mz"
+DEVICE_ID = "TU_DEVICE_ID"
 REGION = "us" # Cambie a 'eu', 'cn', etc. si es necesario.
 
 # --- PARÁMETROS DEL TANQUE ---
