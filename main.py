@@ -1,0 +1,128 @@
+# main.py (CORREGIDO PARA TRONCO DE CONO)
+
+import time
+import math
+import pandas as pd
+from datetime import datetime
+
+import tuya_api
+from config import (DIAMETRO_BASE_M, DIAMETRO_TAPA_M, ALTURA_TOTAL_M,  # Nuevos Parámetros
+                    INTERVALO_CONSULTA_S, DIAMETRO_SALIDA_M)
+
+# Constantes de radio
+RADIO_BASE_M = DIAMETRO_BASE_M / 2
+RADIO_TAPA_M = DIAMETRO_TAPA_M / 2
+
+# Base de datos en memoria
+db_lecturas = pd.DataFrame(columns=['timestamp_s', 'nivel_m', 'caudal_L_min', 'velocidad_m_s', 'area_actual_m2'])
+
+# Área de la Tubería (en m²) - ESTA ES CONSTANTE
+AREA_TUBERIA_M2 = math.pi * (DIAMETRO_SALIDA_M / 2) ** 2
+
+
+def get_area_en_nivel(h_m):
+    """Calcula el área de la sección transversal horizontal en el nivel h."""
+
+    # 1. Tasa de cambio del radio (Pendiente de la pared lateral)
+    # Es la variación total del radio dividida por la altura total.
+    radio_slope = (RADIO_TAPA_M - RADIO_BASE_M) / ALTURA_TOTAL_M
+
+    # 2. Radio en la altura h
+    # Radio(h) = Radio_Base + (Pendiente * Altura_actual)
+    radio_actual = RADIO_BASE_M + (radio_slope * h_m)
+
+    # 3. Área del círculo en esa altura
+    area_actual = math.pi * (radio_actual ** 2)
+    return area_actual
+
+
+def calcular_caudal_y_reportar():
+    global db_lecturas
+
+    nueva_lectura, error = tuya_api.get_current_level()
+
+    if error:
+        print(f"Error al obtener nivel: {error}")
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+
+    h_actual = nueva_lectura['nivel_m']
+    t_actual = nueva_lectura['timestamp_s']
+    Q_L_min = 0.0
+    V_nivel_m_s = 0.0
+    V_flujo_m_s = 0.0
+    tiempo_transcurrido = 0.0
+    A_actual_M2 = get_area_en_nivel(h_actual)  # ¡Calcula el área usando la fórmula!
+
+    if not db_lecturas.empty:
+        ultima_fila = db_lecturas.iloc[-1]
+        h_anterior = ultima_fila['nivel_m']
+        t_anterior = ultima_fila['timestamp_s']
+        A_anterior_M2 = ultima_fila['area_actual_m2']
+
+        # Para el cálculo diferencial, usamos el promedio de las dos áreas (Método del Trapezoide)
+        A_promedio_M2 = (A_actual_M2 + A_anterior_M2) / 2
+
+        tiempo_transcurrido = t_actual - t_anterior
+
+        if tiempo_transcurrido > 0:
+            delta_h = h_actual - h_anterior
+
+            # 1. Velocidad de cambio del Nivel (m/s)
+            V_nivel_m_s = delta_h / tiempo_transcurrido
+
+            # 2. Caudal (Q)
+            # Caudal = Área promedio * Delta h / Delta t
+            delta_V = A_promedio_M2 * delta_h
+            Q_m3_s = delta_V / tiempo_transcurrido
+            Q_L_min = Q_m3_s * 60000
+
+            # 3. Velocidad del Flujo en la Tubería (V = Q / A_tubería)
+            if abs(Q_m3_s) > 1e-6:
+                V_flujo_m_s = abs(Q_m3_s / AREA_TUBERIA_M2)
+
+    # Almacenamiento
+    nueva_fila = pd.DataFrame([{'timestamp_s': t_actual,
+                                'nivel_m': h_actual,
+                                'caudal_L_min': Q_L_min,
+                                'velocidad_m_s': V_flujo_m_s,
+                                'area_actual_m2': A_actual_M2}])
+
+    db_lecturas = pd.concat([db_lecturas, nueva_fila], ignore_index=True)
+
+    return h_actual, Q_L_min, V_nivel_m_s, V_flujo_m_s, tiempo_transcurrido, A_actual_M2
+
+
+# Bucle de Ejecución Principal
+if __name__ == "__main__":
+
+    if not tuya_api.initialize_tuya():
+        exit()
+
+    print(f"--- Sistema de Monitoreo de Caudal Iniciado (Tanque Tronco de Cono) ---")
+    print(f"Geometría: Base {DIAMETRO_BASE_M}m | Tapa {DIAMETRO_TAPA_M}m | Altura {ALTURA_TOTAL_M}m")
+    print(f"Tubería PVC (Diámetro: {DIAMETRO_SALIDA_M * 1000:.2f} mm)")
+
+    while True:
+        try:
+            nivel, caudal, V_nivel_m_s, V_flujo_m_s, tiempo_transcurrido, area_actual = calcular_caudal_y_reportar()
+
+            if tiempo_transcurrido > 0:
+                estado = "ENTRADA" if caudal > 0.01 else ("SALIDA" if caudal < -0.01 else "ESTABLE")
+
+                print(f"[{datetime.now().strftime('%H:%M:%S')}]")
+                print(f"|-- Nivel: {nivel:.3f} m (Área del agua: {area_actual:.3f} m²)")
+                print(f"|-- Caudal ({estado}): {abs(caudal):.2f} Litros/Minuto")
+                print(f"|-- Vel. Cambio Nivel: {V_nivel_m_s * 60:.4f} m/min")
+                print(f"|-- Vel. Flujo Tubería: {V_flujo_m_s:.2f} m/s")
+            else:
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Nivel: {nivel:.3f} m | Esperando la segunda lectura para calcular...")
+
+            time.sleep(INTERVALO_CONSULTA_S)
+
+        except KeyboardInterrupt:
+            print("\nProceso detenido por el usuario.")
+            break
+        except Exception as e:
+            print(f"Error inesperado: {e}")
+            time.sleep(INTERVALO_CONSULTA_S)
