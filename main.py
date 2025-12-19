@@ -6,8 +6,15 @@ import pandas as pd
 from datetime import datetime
 
 import tuya_api
-from config import (DIAMETRO_BASE_M, DIAMETRO_TAPA_M, ALTURA_TOTAL_M,  # Nuevos Parámetros
-                    INTERVALO_CONSULTA_S, DIAMETRO_SALIDA_M)
+from config import (DIAMETRO_BASE_M,
+                    DIAMETRO_TAPA_M,
+                    ALTURA_TOTAL_M,  # Nuevos Parámetros
+                    INTERVALO_CONSULTA_S,
+                    DIAMETRO_SALIDA_M,
+                    PENDIENTE_TUBERIA,
+                    PESO_ESPECIFICO_AGUA,
+                    COTA_EJE_TUBERIA_M,
+                    N_MANNING)
 
 # Constantes de radio
 RADIO_BASE_M = DIAMETRO_BASE_M / 2
@@ -92,6 +99,76 @@ def calcular_caudal_y_reportar():
     return h_actual, Q_L_min, V_nivel_m_s, V_flujo_m_s, tiempo_transcurrido, A_actual_M2
 
 
+
+def calcular_hidraulica_tuberia(nivel_tanque_m):
+    """
+    Hidráulica de tubería circular parcialmente llena
+    Incluye Manning, velocidad teórica y Azevedo Netto
+    """
+
+    d = DIAMETRO_SALIDA_M
+    r = d / 2
+
+    # Tirante hidráulico
+    y = max(0.0, min(nivel_tanque_m - COTA_EJE_TUBERIA_M + r, d))
+
+    if y <= 0:
+        return None
+
+    # Ángulo subtendido
+    theta = 2 * math.acos(1 - (2 * y / d))
+
+    # Área mojada
+    A = (d**2 / 8) * (theta - math.sin(theta))
+
+    # Perímetro mojado
+    P = 0.5 * theta * d
+
+    # Radio hidráulico
+    R = A / P
+
+    # Ancho superficial
+    T = d * math.sin(theta / 2)
+
+    # Esfuerzo cortante
+    if PENDIENTE_TUBERIA < 0.10:
+        tau = PESO_ESPECIFICO_AGUA * R * PENDIENTE_TUBERIA
+    else:
+        tau = PESO_ESPECIFICO_AGUA * R * math.sin(math.atan(PENDIENTE_TUBERIA))
+
+    # ----------------------------
+    # VELOCIDAD TEÓRICA (MANNING)
+    # V = (1/n) * R^(2/3) * S^(1/2)
+    # ----------------------------
+    V_manning = (1 / N_MANNING) * (R ** (2 / 3)) * (PENDIENTE_TUBERIA ** 0.5)
+
+    # Caudal por Manning
+    Q_manning_m3_s = A * V_manning
+    Q_manning_L_s = Q_manning_m3_s * 1000
+
+    # ----------------------------
+    # CAUDAL DE AZEVEDO NETTO
+    # Q = 0.375 * D^2.667 * S^0.5
+    # ----------------------------
+    Q_azevedo_m3_s = 0.375 * (d ** 2.667) * (PENDIENTE_TUBERIA ** 0.5)
+    Q_azevedo_L_s = Q_azevedo_m3_s * 1000
+
+    return {
+        "tirante_m": y,
+        "angulo_rad": theta,
+        "area_m2": A,
+        "perimetro_m": P,
+        "radio_hidraulico_m": R,
+        "ancho_superficial_m": T,
+        "esfuerzo_cortante_N_m2": tau,
+        "velocidad_manning_m_s": V_manning,
+        "caudal_manning_L_s": Q_manning_L_s,
+        "caudal_azevedo_L_s": Q_azevedo_L_s
+    }
+
+
+
+
 # Bucle de Ejecución Principal
 if __name__ == "__main__":
 
@@ -107,13 +184,34 @@ if __name__ == "__main__":
             nivel, caudal, V_nivel_m_s, V_flujo_m_s, tiempo_transcurrido, area_actual = calcular_caudal_y_reportar()
 
             if tiempo_transcurrido > 0:
+                print()
+                print(f"=" * 50)
                 estado = "ENTRADA" if caudal > 0.01 else ("SALIDA" if caudal < -0.01 else "ESTABLE")
+                print(f"-" * 50)
 
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]")
                 print(f"|-- Nivel: {nivel:.3f} m (Área del agua: {area_actual:.3f} m²)")
                 print(f"|-- Caudal ({estado}): {abs(caudal):.2f} Litros/Minuto")
                 print(f"|-- Vel. Cambio Nivel: {V_nivel_m_s * 60:.4f} m/min")
                 print(f"|-- Vel. Flujo Tubería: {V_flujo_m_s:.2f} m/s")
+
+                hidraulica = calcular_hidraulica_tuberia(nivel)
+
+                if hidraulica:
+                    print(f"=" * 50)
+
+                    print("|-- Hidráulica Tubería:")
+                    print(f"-" * 50)
+                    print(f"    Tirante: {hidraulica['tirante_m']:.3f} m")
+                    print(f"    Tirante: {hidraulica['angulo_rad']:.3f} m")
+                    print(f"    Área mojada: {hidraulica['area_m2']:.4f} m²")
+                    print(f"    Radio hidráulico: {hidraulica['radio_hidraulico_m']:.4f} m")
+                    print(f"    Ancho superficial: {hidraulica['ancho_superficial_m']:.3f} m")
+                    print(f"    Esfuerzo cortante: {hidraulica['esfuerzo_cortante_N_m2']:.2f} N/m²")
+                    print(f"    Velocidad (Manning): {hidraulica['velocidad_manning_m_s']:.3f} m/s")
+                    print(f"    Caudal (Manning): {hidraulica['caudal_manning_L_s']:.2f} L/s")
+                    print(f"    Caudal (Azevedo Netto): {hidraulica['caudal_azevedo_L_s']:.2f} L/s")
+
             else:
                 print(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Nivel: {nivel:.3f} m | Esperando la segunda lectura para calcular...")
