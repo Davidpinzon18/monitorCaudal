@@ -189,6 +189,7 @@ if __name__ == "__main__":
                 estado = "ENTRADA" if caudal > 0.01 else ("SALIDA" if caudal < -0.01 else "ESTABLE")
                 print(f"-" * 50)
 
+                print(f"="*50)
                 print(f"[{datetime.now().strftime('%H:%M:%S')}]")
                 print(f"|-- Nivel: {nivel:.3f} m (Área del agua: {area_actual:.3f} m²)")
                 print(f"|-- Caudal ({estado}): {abs(caudal):.2f} Litros/Minuto")
