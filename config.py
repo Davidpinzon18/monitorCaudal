@@ -12,7 +12,7 @@ REGION = "us" # Cambie a 'eu', 'cn', etc. si es necesario.
 DIAMETRO_BASE_M = 0.1524      # D1: Diámetro de la base (inferior)
 DIAMETRO_TAPA_M = 0.1524      # D2: Diámetro de la tapa (superior)
 ALTURA_TOTAL_M = 0.215       # H: Altura total del tanque
-INTERVALO_CONSULTA_S = 30 # Cada cuántos segundos el código preguntará al sensor
+INTERVALO_CONSULTA_S = 60 # Cada cuántos segundos el código preguntará al sensor
 
 # --- HIDRÁULICA DE LA TUBERÍA ---
 PENDIENTE_TUBERIA = 0.01      # S (m/m)
