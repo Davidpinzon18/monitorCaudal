@@ -3,6 +3,8 @@
 from tuya_connector import TuyaOpenAPI
 import time
 from config import ACCESS_ID, ACCESS_SECRET, DEVICE_ID, REGION
+from datetime import datetime, timezone
+
 
 # Mapeo de la región al endpoint de la API
 ENDPOINT = f"https://openapi.tuya{REGION}.com"
@@ -31,7 +33,21 @@ def get_current_level():
     try:
         response = openapi.get(url)
 
-        # print(f"Este es el status: {response}") # Deje esta línea si quiere seguir viendo el JSON
+        #print(f"Este es el status: {response}") # Deje esta línea si quiere seguir viendo el JSON
+
+        # Convertir de milisegundos a segundos
+        fecha_utc = datetime.fromtimestamp(response.get('t') / 1000, tz=timezone.utc)
+
+        # Mostrar en UTC
+        print("\n\n")
+        print("+"*50)
+        print("")
+        print("UTC:", fecha_utc)
+
+        # Convertir a hora local de Colombia (UTC-5)
+        from datetime import timedelta
+        fecha_colombia = fecha_utc.astimezone(timezone(timedelta(hours=-5)))
+        print("Colombia:", fecha_colombia)
 
         if response.get('success', False):
             status_list = response.get('result', [])
